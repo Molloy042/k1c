@@ -13,23 +13,27 @@ CAPTCHA_XPATH = '//*[@id="rc-anchor-container"]/div[3]'
 LOGIN_BUTTON_XPATH = '//*[@id="login-form-submit"]'
 USER = 'Ssherryyan'
 PASSWORD = 'Ysq.970317'
+SUCCESS_URL_MARK = "profile.html?action=only_member_can_book"
+login_page_url = "https://members.swtc.ca/login.html"
 
-# 📁 浏览器数据保存目录 (保存登录状态和信任指纹)
 USER_DATA_DIR = "./user_data_chrome_final" 
 
 # =======================================================
-TEST_MODE = True
+TEST_MODE = False
+TEST_MODE_date_str = '2025-12-21'
+delay_toggle = False
 # =======================================================
 
 TARGET_HOUR = 8
 TARGET_MINUTE = 15
 TEST_DELAY_SECONDS = 15 
 MAX_BOOKED_COUNT = 6
+DECISION_TIMEOUT_MS = 1000 
 
-DEFAULT_COURT_PRIORITIES = [[10, 9, 8, 7, 6], [1, 2, 3, 4]]
-PREFERRED_GROUPS = [(13, 14), (14, 15), (15, 16), (16, 17), (17, 18),(12, 13), (22, 23), (8, 9)]
+COURT_LIST = [10, 9, 8, 7, 6, 1, 2, 3, 4]
+PREFERRED_GROUPS = [(13, 14), (14, 15), (15, 16), (16, 17), (17, 18),(19, 20),(20,21), (21,22)]
 
-# --- 计时器类 (保持不变) ---
+# --- 计时器类 (还原) ---
 class Timer:
     def __init__(self, step_name):
         self.step_name = step_name
@@ -37,37 +41,32 @@ class Timer:
     def start(self):
         self.start_time = time.perf_counter()
     def stop(self):
-        elapsed = time.perf_counter() - self.start_time
-        return elapsed
+        return time.perf_counter() - self.start_time
 
 stopwatch = {}
 
 def get_random_delay(min_ms=50, max_ms=150):
-    """生成一个模拟人类反应时间的随机延迟 (毫秒)"""
     return random.randint(min_ms, max_ms) / 1000.0
 
-# ⭐ 升级的模拟人类打字
+def delay_on_test_mode():
+    global delay_toggle
+    if delay_toggle:
+        delay = 3
+        time.sleep(delay)
+
 def human_type(page, selector_or_xpath, text, step_name, delay_ms_min=80, delay_ms_max=200):
-    """使用随机延迟模拟真人按键输入，并记录时间。"""
     timer = Timer(step_name)
     timer.start()
-    
     locator = page.locator(selector_or_xpath)
-    
     print(f"  -> 步骤: {step_name} (聚焦输入框)")
-    locator.click(delay=get_random_delay(100, 300))
-    time.sleep(get_random_delay(500, 2000)) 
-    
+    locator.click(delay=get_random_delay(100, 200))
+    time.sleep(get_random_delay(500, 1500)) 
     print(f"  -> 步骤: {step_name} (模拟打字)")
     delay = random.randint(delay_ms_min, delay_ms_max)
     locator.type(text, delay=delay) 
-    time.sleep(get_random_delay(500, 2000)) 
-    
+    #time.sleep(get_random_delay(500, 1500)) 
     stopwatch[step_name.replace(' ', '_')] = timer.stop()
-    print(f"  -> 用时: {stopwatch[step_name.replace(' ', '_')]:.3f}s")
     return True
-    
-
 
 def random_scroll(page):
     """模拟小幅度的随机滚动，并打印输出。"""
@@ -88,7 +87,6 @@ def ensure_correct_date_view(page, target_date_booking, date_str, is_next_month_
     
     try:
         page.goto(BOOKING_URL, timeout=5000)
-        #time.sleep(get_random_delay(200, 500)) 
     except Exception:
         stopwatch['Ensure_Date_View_Failed'] = timer.stop()
         print("  ❌ 导航失败或超时")
@@ -124,39 +122,32 @@ def ensure_correct_date_view(page, target_date_booking, date_str, is_next_month_
         return False
 
 def run_booking_script():
-    # === 1. 计算逻辑 (保持前置) ===
+    # === 1. 时间计算逻辑 (还原前置) ===
     today = date.today()
-    days_after = 3 if TEST_MODE else 6
+    days_after =  6
     target_date_booking = today + timedelta(days=days_after) 
     current_datetime = datetime.now()
     
     if TEST_MODE:
         target_time = current_datetime + timedelta(seconds=TEST_DELAY_SECONDS)
+        date_str = TEST_MODE_date_str
     else:
         target_time = current_datetime.replace(hour=TARGET_HOUR, minute=TARGET_MINUTE, second=0, microsecond=0)
         if target_time < current_datetime - timedelta(seconds=600):
             target_time += timedelta(days=1)
             target_date_booking += timedelta(days=1)
+        date_str = target_date_booking.strftime("%Y-%m-%d")
 
-    date_str = target_date_booking.strftime("%Y-%m-%d")
     wait_seconds = (target_time - current_datetime).total_seconds()
     is_next_month_needed = (target_date_booking.year > today.year) or \
                            (target_date_booking.year == today.year and target_date_booking.month > today.month)
-    if TEST_MODE:
-        date_str = '2025-12-16'
-    print("\n=================================================")
-    print(f"🎯 预定任务目标：{date_str} {TARGET_HOUR:02}:{TARGET_MINUTE:02}:00")
-    print(f"⏳ 距离目标时间等待：{wait_seconds:.1f} 秒")
-    print("=================================================")
 
-    # =======================================================
-    # 🕵️ 启动持久化和最高级隐蔽浏览器
-    # =======================================================
+    print("\n=================================================")
+    print(f"🎯 预定目标：{date_str} {TARGET_HOUR:02}:{TARGET_MINUTE:02}:00")
+    print("=================================================")
     timer_launch = Timer("Browser_Launch")
     timer_launch.start()
-    
     with sync_playwright() as p:
-        
         browser_args = [
             '--disable-blink-features=AutomationControlled', 
             '--no-sandbox',
@@ -182,10 +173,10 @@ def run_booking_script():
         timer_login_check.start()
         
         print("\n2. 检查登录状态...")
-        page.goto(BOOKING_URL, wait_until='domcontentloaded')
-        time.sleep(3)
+        page.goto("https://members.swtc.ca/login.html")
+        time.sleep(1)
         
-        if "action=need_to_login_first" in page.url:
+        if "action=already_logged_in" not in page.url or "action=only_member_can_book" in page.url:
             print("   ⚠️ 状态失效，开始模拟登录操作:")
             
             # 1. 模拟人类输入用户名
@@ -198,103 +189,182 @@ def run_booking_script():
             human_type(page, f"xpath={PASSWORD_XPATH}", PASSWORD, "Input_Password", delay_ms_min=80, delay_ms_max=200)
 
             # 4. 再次模拟小幅滚动 (在等待用户介入前)
-            random_scroll(page)
+            #random_scroll(page)
+            LOGIN_KEYWORD = "action=need_to_login_first"
+            SUBMIT_BUTTON_XPATH = '//*[@id="login-form-submit"]'
+            page.evaluate(f"""() => {{
+                const btn = document.evaluate('{SUBMIT_BUTTON_XPATH}', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                if (btn) {{
+                    btn.addEventListener('click', () => {{ window.__LOGIN_BUTTON_CLICKED = true; }});
+                }}
+            }}""")
+
+            print("\n   🛑 准备就绪！请手动完成验证码并点击网页上的【Login】按钮。")
+            print("   💡 脚本将在你点击按钮的瞬间自动切换至监控模式...")
             
+            try:
+                # 3. ⭐ 等待两个阶段：首先是按钮被按下，然后是 URL 发生变化
+                # 第一步：等待按钮按下标志位
+                page.wait_for_function("() => window.__LOGIN_BUTTON_CLICKED === true", timeout=60000)
+                print("   🖱️ 检测到 Login 按钮已按下，正在监控跳转...")
+
+                # 第二步：等待 URL 改变（不再是登录页）
+                page.wait_for_function(
+                    f"""() => window.location.href !== "{login_page_url}" && 
+                               !window.location.href.includes("{LOGIN_KEYWORD}")""", 
+                    timeout=30000
+                )
+                
+                print(f"   ✅ 登录成功！当前位置: {page.url}")
+                
+                # 4. 强制返回预定页并等待关键加载
+                if "booking.html" not in page.url:
+                    page.goto(BOOKING_URL, wait_until='domcontentloaded')
+                
+                print("   ⏳ 正在等待场地加载渲染 (解决 13-15 点漏场问题)...")
+                # 精准等待：直到页面刷出至少一个带 data-value 的按钮
+                page.wait_for_selector('button[data-value]', timeout=5000)
+                print("   ✨ 场地加载完成，准备进入抢场倒计时。")
+                
+            except Exception as e:
+                print(f"   ❌ 自动识别失败: {e}")
+                print("   👉 请手动按回车尝试强制继续...")
+                input()
             
-            print("\n   🛑🛑🛑 需人工介入！请在浏览器中手动解决验证码/点击登录。")
-            print("   👉 登录成功并看到预定页面后，请在终端按【回车】继续...")
-            input() 
-            #time.sleep(10)
-            
-            if "booking.html" not in page.url:
-                page.goto(BOOKING_URL)
         else:
             print("   ✅ 之前的登录状态有效，无需重新登录！")
 
+        if "booking.html" not in page.url:
+            page.goto(BOOKING_URL)
         stopwatch['Login_Check_and_Action'] = timer_login_check.stop()
         print(f"   用时 (包含人工介入): {stopwatch['Login_Check_and_Action']:.3f}s")
 
-
-        # === 4. 高精度等待 ===
+        # === 🎯 3. 高精度等待逻辑 (还原与升级) ===
         timer_spin_lock = Timer("Spin_Lock_Wait")
         print("\n4. 进入高精度等待...")
         if wait_seconds > 0:
-            if wait_seconds > 5.0:
+            if wait_seconds > 3.0:
+                print(f"   ⏳ 等待至目标时间 {wait_seconds} ...")
                 time.sleep(wait_seconds - 0.1)
                 wait_seconds = (target_time - datetime.now()).total_seconds()
             
             timer_spin_lock.start()
             start = time.perf_counter()
+            print("\n4. 进入高精度等待Spin_Lock_Wait...")
             while (time.perf_counter() - start) < wait_seconds: pass
             stopwatch['Spin_Lock_Wait'] = timer_spin_lock.stop()
             print(f"   ✅ 等待结束。Spin Lock 耗时: {stopwatch['Spin_Lock_Wait']:.3f}s")
 
-        print("=================================================")
-        print("🔔 开始抢场操作！")
-        print("=================================================")
+        # === 4. 抢场循环 (整合优化版) ===
+        # 此时时间刚到 8:15:00.000，立即点击日期
+        ensure_correct_date_view(page, target_date_booking, date_str, is_next_month_needed)
 
-        # 3. 确保日期视图正确
-        print("\n3. 确保页面视图和目标日期...")
-        if not ensure_correct_date_view(page, target_date_booking, date_str, is_next_month_needed):
-            print("❌ 视图设置失败，脚本终止。")
-            context.close()
-            return
-            
-        # === 5. 抢场循环 ===
+        # 预加载 JS 逻辑，避免在循环中重复定义字符串
+        JS_PICKER_SCRIPT = """
+        (args) => {
+            const { courtList, h1, h2, maxCount, currentBooked } = args;
+            const findAndClick = (hStart, hEnd, preferredCid) => {
+                const selector = `button[data-value="${hStart}00|${hEnd}00|${preferredCid}"].available`;
+                const el = document.querySelector(selector);
+                if (el) {
+                    el.click(); // 直接在浏览器端触发点击
+                    return true;
+                }
+                return false;
+            };
+
+            let result = { batch: 0, cid: null };
+            // 尝试选第一个时段 (Slot A)
+            for (let cid of courtList) {
+                if (findAndClick(h1.s, h1.e, cid)) {
+                    result.batch = 1;
+                    result.cid = cid;
+                    // 如果配额允许，尝试连选第二个时段 (Slot B)
+                    if (currentBooked + 1 < maxCount) {
+                        if (findAndClick(h2.s, h2.e, cid)) {
+                            result.batch = 2;
+                        }
+                    }
+                    break; 
+                }
+            }
+            return result;
+        }
+        """
+
         booked_count = 0
-        timer_loop = Timer("Total_Booking_Loop")
-        timer_loop.start()
-
-        for start_h, end_h in PREFERRED_GROUPS:
+        group_idx = 0
+        while group_idx < len(PREFERRED_GROUPS):
             if booked_count >= MAX_BOOKED_COUNT: break
+            timer_select = Timer(f"load_page_for_Group_{group_idx}")
+            timer_select.start()
+            h1_s, h1_e = PREFERRED_GROUPS[group_idx]
+            h2_s, h2_e = h1_e, h1_e + 1
             
-            time_slot_label = f"{start_h}:00-{end_h}:00"
-            start_time_str, end_time_str = f"{start_h}00", f"{end_h}00"
+            # ⭐ 关键修改：高频监听特定时段的按钮渲染
+            # 这里的 selector 专门盯着你要的那个时间段
+            sync_selector = f'button[data-value^="{h1_s}00|{h1_e}00|"]'
             
-            slot_booked_in_time = False
-            for group_index, court_list in enumerate(DEFAULT_COURT_PRIORITIES):
-                if slot_booked_in_time: break
-                
-                print(f"  -> 尝试时间段 {time_slot_label} (优先级 {group_index+1})...")
-                for court_id in court_list:
-                    slot_xpath = f'//button[@data-value="{start_time_str}|{end_time_str}|{court_id}" and contains(@class, "available")]'
-                    try:
-                        timer_click = Timer(f"Court_{court_id}_Booking_Attempt")
-                        timer_click.start()
+            try:
+                # 使用 state='attached' 比 'visible' 快，因为元素一进入 HTML 树就触发
+                # timeout 设为 2000ms，防止页面彻底卡死
+                page.wait_for_selector(sync_selector, state='attached', timeout=1000)
+            except:
+                print(f"⚠️ 时段 {h1_s}-{h1_e} 渲染超时，可能该时段无球场或网络拥堵。")
+                group_idx += 1
+                continue
+            stopwatch[f'load_page_for_Group_{group_idx}'] = timer_select.stop()
 
-                        loc = page.locator(slot_xpath)
-                        loc.wait_for(state='visible', timeout=50) 
-                        
-                        # 🎾 预定时间段点击
-                        loc.click(delay=get_random_delay(30, 80)) 
-                        #time.sleep(get_random_delay(50, 100)) 
+            # --- 此时按钮已渲染，立即执行原本的 JS 注入逻辑 ---
+            timer_select = Timer(f"Select_and_Book_Group_{group_idx}")
+            timer_select.start()
+            
+            picker_data = {
+                "courtList": COURT_LIST,
+                "h1": {"s": h1_s, "e": h1_e},
+                "h2": {"s": h2_s, "e": h2_e},
+                "maxCount": MAX_BOOKED_COUNT,
+                "currentBooked": booked_count
+            }
 
-                        # 确认 1: 预定按钮
-                        btn1 = '//*[@id="book-button"]/div/a'
-                        page.locator(btn1).wait_for(state='visible', timeout=100)
-                        page.locator(btn1).click(delay=get_random_delay(50, 150))
-                        #time.sleep(get_random_delay(50, 100)) 
-                        
-                        # 确认 2: 最终确认/取消
-                        btn2 = '//*[@id="cd-popup"]/div/ul/li[2]/a' if TEST_MODE else '//*[@id="cd-popup"]/div/ul/li[1]/a'
-                        page.locator(btn2).wait_for(state='visible', timeout=100)
-                        page.locator(btn2).click(delay=get_random_delay(30, 80))
-                        
-                        stopwatch[f'Booking_Success_Court_{court_id}'] = timer_click.stop()
-                        print(f"  🏆 预定成功: 场地 {court_id}。用时: {stopwatch[f'Booking_Success_Court_{court_id}']:.3f}s")
-                        booked_count += 1
-                        slot_booked_in_time = True
-                        
-                        if booked_count < MAX_BOOKED_COUNT:
-                            ensure_correct_date_view(page, target_date_booking, date_str, is_next_month_needed)
-                        break
-                    except Exception as e: 
-                        print(f"  - 场地 {court_id} 不可用或点击失败: {e.__class__.__name__}")
-                        continue
+            try:
+                # ⚡ 执行 JS：在浏览器侧完成搜索和点击，返回结果
+                decision = page.evaluate(JS_PICKER_SCRIPT, picker_data)
+
+                if decision["batch"] > 0:
+                    print(f"  ✅ JS 选定 {decision['batch']} 场 (场地 {decision['cid']})")
+                    
+                    # 1. 提交预定
+                    page.locator('//*[@id="book-button"]/div/a').click(delay=get_random_delay(10, 30))
+                    
+                    # 2. 确认预定 (针对速度优化：使用 attached 状态)
+                    confirm_xpath = '//*[@id="cd-popup"]/div/ul/li[2]/a' if TEST_MODE else '//*[@id="cd-popup"]/div/ul/li[1]/a'
+                    page.wait_for_selector(confirm_xpath, state='attached', timeout=2000)
+                    page.locator(confirm_xpath).click()
+                    
+                    
+                    
+                    print(f"🏆 成功预定 {decision['batch']} 场!")
+                    booked_count += decision["batch"]
+                    
+                    # 如果还需要继续订，刷新/回到日期视图
+                    if booked_count < MAX_BOOKED_COUNT:
+                        ensure_correct_date_view(page, target_date_booking, date_str, is_next_month_needed)
+                else:
+                    print(f"  ❌ 时段 {h1_s}-{h1_e} 无可用场地，跳过。")
+
+            except Exception as e:
+                print(f"❌ 运行异常: {e}")
+                ensure_correct_date_view(page, target_date_booking, date_str, is_next_month_needed)
+
+            stopwatch[f'Select_Group_{h1_s}_{h1_e}'] = timer_select.stop()
+            #time.sleep(5)
+            
+            # 索引跳转逻辑
+            group_idx += 1
+            # 如果 Slot B 也是我们选中的，逻辑上可以多跳一个 Index (取决于 PREFERRED_GROUPS 的排布)
+
         
-        stopwatch['Total_Booking_Loop'] = timer_loop.stop()
-        
-        # === 6. 统计输出 ===
         print("\n=================================")
         print(f"总计预定场地数: {booked_count}")
         print("=== ✨ 详细耗时统计 (秒) ===")
@@ -304,11 +374,9 @@ def run_booking_script():
             print(f"| {step.ljust(30)}| {t:.3f}   |")
         print("=================================")
         
-        if TEST_MODE:
-            input("TEST_MODE: 按回车关闭浏览器...")
-        
-        context.close()
         print("✅ 脚本执行完毕，浏览器状态已保存。")
+        input("按回车关闭...")
+        context.close()
 
 if __name__ == '__main__':
     run_booking_script()
